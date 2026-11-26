@@ -1,46 +1,45 @@
-#!/usr/bin/env python3
-"""Entry point for news-image-20261126.
+"""Round-2 entry runner (stdlib only): copies the pre-built entry.png
+byte-for-byte into MAKEFUN_OUTPUT_DIR (or "." when unset) and verifies
+size, PNG magic bytes and SHA-256 before and after the copy."""
 
-Writes the pre-built front-page image (entry.png, held in this
-repository) to the directory named by MAKEFUN_OUTPUT_DIR (default "."),
-as entry.png. Standard library only, no network, deterministic: the
-copied bytes are verified against the committed image's SHA-256, so
-both runs write identical bytes.
-"""
 import hashlib
 import os
-import shutil
+import sys
 
-EXPECTED_SHA256 = "8e8705f3572cb731eef9b1a0a7e563edff0d6503564d7c782810962409dfe9e6"
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-
-
-def sha256_of(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+EXPECTED_SHA256 = "f4d8951c95236e16b4f0220a7c800dbf196d55468c007490adf0b0510b1dfa46"
+EXPECTED_SIZE = 188401
+SOURCE = "entry.png"
+TARGET = "entry.png"
 
 
 def main():
-    src = os.path.join(HERE, "entry.png")
-    if not os.path.isfile(src):
-        raise SystemExit("entry.png missing from repository")
-    actual = sha256_of(src)
-    if actual != EXPECTED_SHA256:
-        raise SystemExit(
-            "entry.png hash mismatch: image is not the committed one "
-            f"(got {actual}, expected {EXPECTED_SHA256})"
-        )
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", ".")
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR") or "."
+    here = os.path.dirname(os.path.abspath(__file__))
+    src = os.path.join(here, SOURCE)
+    with open(src, "rb") as fh:
+        data = fh.read()
+    if not data.startswith(PNG_MAGIC):
+        print("not a PNG file", file=sys.stderr)
+        return 1
+    if len(data) != EXPECTED_SIZE:
+        print(f"size mismatch: {len(data)} != {EXPECTED_SIZE}", file=sys.stderr)
+        return 1
+    if hashlib.sha256(data).hexdigest() != EXPECTED_SHA256:
+        print("sha256 mismatch", file=sys.stderr)
+        return 1
     os.makedirs(out_dir, exist_ok=True)
-    dest = os.path.join(out_dir, "entry.png")
-    shutil.copyfile(src, dest)
-    if sha256_of(dest) != EXPECTED_SHA256:
-        raise SystemExit("copied entry.png failed its hash check")
+    dest = os.path.join(out_dir, TARGET)
+    with open(dest, "wb") as fh:
+        fh.write(data)
+    with open(dest, "rb") as fh:
+        check = fh.read()
+    if len(check) != EXPECTED_SIZE or hashlib.sha256(check).hexdigest() != EXPECTED_SHA256:
+        print("output verification failed", file=sys.stderr)
+        return 1
+    print(f"wrote {dest} ({len(check)} bytes, sha256 {EXPECTED_SHA256})")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
